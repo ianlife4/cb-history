@@ -213,14 +213,20 @@
   // load data
   const cacheBust = '?t=' + Date.now();
   fetch('data/cb_data.json' + cacheBust)
-    .then(r => {
+    .then(async r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
+      // 取 HTTP Last-Modified header 當資料更新時間(JSON 不含 timestamp,真正 idempotent)
+      const lm = r.headers.get('last-modified');
+      const data = await r.json();
+      return { data, lastModified: lm };
     })
-    .then(d => {
+    .then(({ data: d, lastModified }) => {
       allItems = d.items || [];
       fixedCodes = new Set((d.fixes_applied || []).map(f => f.code));
-      $('#updated_at').textContent = '更新於 ' + (d.updated_at || '?');
+      const updatedText = lastModified
+        ? new Date(lastModified).toLocaleString('zh-Hant', { hour12: false })
+        : '?';
+      $('#updated_at').textContent = '更新於 ' + updatedText;
       $('#count').textContent = '共 ' + (d.count || allItems.length) + ' 檔';
       if (fixedCodes.size > 0) {
         const list = (d.fixes_applied || []).map(f => `${f.code}「${f.fixed}」`).join('、');

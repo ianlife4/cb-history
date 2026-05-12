@@ -12,7 +12,6 @@ import csv
 import json
 import sys
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 
 import openpyxl
@@ -70,10 +69,10 @@ def parse_xlsx(path: Path) -> tuple[list[str], list[dict]]:
 def write_outputs(header: list[str], items: list[dict], fixes_applied: list[dict]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # JSON
+    # JSON — NO timestamp inside; idempotent: same data → same bytes.
+    # Frontend reads HTTP `Last-Modified` header for freshness.
     json_path = DATA_DIR / "cb_data.json"
     payload = {
-        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "source": URL,
         "count": len(items),
         "fixes_applied": fixes_applied,
