@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CB 掛牌歷史最高/最低價</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #0f766e;
+    --accent-bg: #f0fdfa;
+    --row-hover: #f5f5f4;
+    --warn: #b45309;
+    --warn-bg: #fffbeb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --fg: #f4f4f5;
+      --muted: #9ca3af;
+      --line: #27272a;
+      --accent: #5eead4;
+      --accent-bg: #042f2e;
+      --row-hover: #18181b;
+      --warn: #fbbf24;
+      --warn-bg: #1c1917;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.45;
+  }
+  body { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; }
+  .meta a { color: var(--accent); text-decoration: none; }
+  .meta a:hover { text-decoration: underline; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 12px; position: sticky; top: 0; z-index: 5;
+  }
+  #search {
+    flex: 1; min-width: 180px; padding: 8px 12px; font-size: 1rem;
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+  }
+  #search:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .filter-chip { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); user-select: none; cursor: pointer; }
+  .filter-chip input { accent-color: var(--accent); }
+  .stats { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+  .notice {
+    background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn);
+    padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px;
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--bg); }
+  thead th {
+    position: sticky; top: 62px; background: var(--bg); z-index: 4;
+    text-align: left; font-weight: 600; padding: 10px 12px; border-bottom: 2px solid var(--line);
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  thead th:hover { background: var(--accent-bg); color: var(--accent); }
+  thead th[data-sort="asc"]::after  { content: " ▲"; color: var(--accent); }
+  thead th[data-sort="desc"]::after { content: " ▼"; color: var(--accent); }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  tbody tr:hover { background: var(--row-hover); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SF Mono", Consolas, monospace; }
+  td.code { font-family: "SF Mono", Consolas, monospace; color: var(--muted); }
+  tr.fixed td.name::after {
+    content: " 🛠"; color: var(--warn); font-size: 0.8em; cursor: help;
+  }
+  tr.fixed { background: var(--warn-bg); }
+  .empty { text-align: center; padding: 40px; color: var(--muted); }
+  .loading { text-align: center; padding: 60px; color: var(--muted); }
+  footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    h1 { font-size: 1.15rem; }
+    thead th, tbody td { padding: 6px 8px; }
+    thead th { top: 58px; }
+    .controls { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>CB 掛牌歷史最高/最低價</h1>
+<div class="meta">
+  資料來源:<a href="https://cb168.netlify.app/" target="_blank" rel="noopener">cb168.netlify.app</a>
+  · <span id="updated_at">載入中…</span>
+  · <span id="count">—</span>
+  · <a href="data/cb_data.csv" download>下載 CSV</a>
+  · <a href="data/output.xlsx" download>原始 xlsx</a>
+</div>
+
+<div id="notice" class="notice" style="display:none"></div>
+
+<div class="controls">
+  <input id="search" type="search" placeholder="搜尋代號或名稱(例如 1101、台泥、立碁)" autocomplete="off" />
+  <label class="filter-chip">
+    <input type="checkbox" id="hide_zero" checked />
+    隱藏 0 價格
+  </label>
+  <span class="stats" id="stats"></span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th data-key="代號" data-sort="asc">代號</th>
+      <th data-key="名稱">名稱</th>
+      <th data-key="掛牌最高" class="num-h">掛牌最高</th>
+      <th data-key="掛牌最低" class="num-h">掛牌最低</th>
+    </tr>
+  </thead>
+  <tbody id="tbody">
+    <tr><td colspan="4" class="loading">載入資料中…</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  本站每天自動從 cb168 鏡像備份一次,並修補原檔已知亂碼。
+  原始檔、清洗後 JSON / CSV 都公開在 <a href="https://github.com/ianlife4/cb-history" target="_blank" rel="noopener">GitHub repo</a>。
+</footer>
+
+<script>
+(() => {
+  const $ = (sel) => document.querySelector(sel);
+  const tbody = $('#tbody');
+  const search = $('#search');
+  const hideZero = $('#hide_zero');
+  const stats = $('#stats');
+  const noticeEl = $('#notice');
+
+  let allItems = [];
+  let fixedCodes = new Set();
+  let sortKey = '代號';
+  let sortDir = 'asc';
+
+  const fmt = (v) => {
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '');
+    return String(v);
+  };
+
+  function render() {
+    const q = search.value.trim().toLowerCase();
+    const filterZero = hideZero.checked;
+    let rows = allItems;
+    if (q) {
+      rows = rows.filter(r =>
+        String(r['代號']).includes(q) ||
+        String(r['名稱'] || '').toLowerCase().includes(q)
+      );
+    }
+    if (filterZero) {
+      rows = rows.filter(r => (r['掛牌最高'] || 0) > 0 || (r['掛牌最低'] || 0) > 0);
+    }
+    // sort
+    rows = rows.slice().sort((a, b) => {
+      let av = a[sortKey], bv = b[sortKey];
+      if (typeof av === 'string' || typeof bv === 'string') {
+        av = String(av || ''); bv = String(bv || '');
+        return sortDir === 'asc' ? av.localeCompare(bv, 'zh-Hant') : bv.localeCompare(av, 'zh-Hant');
+      }
+      av = av || 0; bv = bv || 0;
+      return sortDir === 'asc' ? av - bv : bv - av;
+    });
+
+    stats.textContent = `${rows.length} / ${allItems.length} 筆`;
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">沒有符合條件的資料</td></tr>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      if (fixedCodes.has(r['代號'])) tr.classList.add('fixed');
+      tr.innerHTML =
+        `<td class="code">${fmt(r['代號'])}</td>` +
+        `<td class="name">${fmt(r['名稱'])}</td>` +
+        `<td class="num">${fmt(r['掛牌最高'])}</td>` +
+        `<td class="num">${fmt(r['掛牌最低'])}</td>`;
+      frag.appendChild(tr);
+    }
+    tbody.replaceChildren(frag);
+  }
+
+  // sort handlers
+  document.querySelectorAll('thead th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (sortKey === key) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortKey = key;
+        sortDir = 'asc';
+      }
+      document.querySelectorAll('thead th').forEach(x => x.removeAttribute('data-sort'));
+      th.setAttribute('data-sort', sortDir);
+      render();
+    });
+  });
+
+  search.addEventListener('input', render);
+  hideZero.addEventListener('change', render);
+
+  // load data
+  const cacheBust = '?t=' + Date.now();
+  fetch('data/cb_data.json' + cacheBust)
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(d => {
+      allItems = d.items || [];
+      fixedCodes = new Set((d.fixes_applied || []).map(f => f.code));
+      $('#updated_at').textContent = '更新於 ' + (d.updated_at || '?');
+      $('#count').textContent = '共 ' + (d.count || allItems.length) + ' 檔';
+      if (fixedCodes.size > 0) {
+        const list = (d.fixes_applied || []).map(f => `${f.code}「${f.fixed}」`).join('、');
+        noticeEl.style.display = 'block';
+        noticeEl.textContent = `🛠 已修補原檔亂碼:${list}(原檔含 U+FFFD 替代字元,經查證後手動修正)`;
+      }
+      render();
+    })
+    .catch(e => {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty">載入失敗:${e.message}</td></tr>`;
+      console.error(e);
+    });
+})();
+</script>
+
+</body>
+</html>
