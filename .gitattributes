@@ -1,0 +1,22 @@
+# Force LF line endings for text files (cross-platform consistency).
+# Without this, Windows core.autocrlf=true would store CRLF, but GHA Linux
+# writes LF, causing every fetch to diff the entire file.
+
+*.py     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.csv    text eol=lf
+*.md     text eol=lf
+*.html   text eol=lf
+*.css    text eol=lf
+*.js     text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+
+# Binary
+*.xlsx   binary
+*.xls    binary
+*.png    binary
+*.jpg    binary
+*.ico    binary
