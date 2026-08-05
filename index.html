@@ -3,240 +3,374 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0a0e17" />
 <title>CB 掛牌歷史最高/最低價</title>
+<!-- 字體與 CBAS 報價頁用同一組 (逐字相同的 URL,才吃得到同一份 HTTP 快取) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&display=swap" rel="stylesheet">
 <style>
+  /* ─── 全站基準 token (與 CBAS 報價頁同一套) ───────────── */
   :root {
-    --bg: #fafafa;
-    --fg: #1a1a1a;
-    --muted: #6b7280;
-    --line: #e5e7eb;
-    --accent: #0f766e;
-    --accent-bg: #f0fdfa;
-    --row-hover: #f5f5f4;
-    --warn: #b45309;
-    --warn-bg: #fffbeb;
+    --bg:        #0a0e17;
+    --bg-elev:   #11161f;
+    --bg-elev2:  #161c28;
+    --bg-row:    #0d121b;
+    --bg-row-hi: #14202f;
+    --line:      #1d2632;
+    --line-soft: #141a24;
+
+    --txt:       #e6ecf5;
+    --txt-soft:  #8a96aa;
+    --txt-dim:   #5b6779;
+    --txt-num:   #d4dce8;
+
+    --amber:     #f5b733;
+    --amber-dim: #b8851d;
+    --teal:      #4dd4ac;
+    --rose:      #f06d8a;
+    --blue:      #5fa8ff;
+
+    --shadow:    0 1px 0 0 rgba(255,255,255,0.02), 0 4px 16px rgba(0,0,0,0.35);
+
+    /* 字體:h1 的中文用 sans 900 而不是 --serif。
+       Fraunces 是拉丁字型不含 CJK,中文會掉到系統襯線(Windows 上是新細明體),
+       比 sans 900 難看很多 —— 所以這裡刻意不照抄 CBAS 的 serif 標題。 */
+    --sans:   'Noto Sans TC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono:   'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+    --r-sm: 4px; --r: 6px; --r-pill: 999px;
+    --wrap: 1180px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0a0a0a;
-      --fg: #f4f4f5;
-      --muted: #9ca3af;
-      --line: #27272a;
-      --accent: #5eead4;
-      --accent-bg: #042f2e;
-      --row-hover: #18181b;
-      --warn: #fbbf24;
-      --warn-bg: #1c1917;
-    }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg); color: var(--txt);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum" 1, "lnum" 1;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
-    font-size: 14px; line-height: 1.45;
-  }
-  body { padding: 16px; max-width: 1100px; margin: 0 auto; }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; }
-  .meta a { color: var(--accent); text-decoration: none; }
-  .meta a:hover { text-decoration: underline; }
-  .controls {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
-    margin-bottom: 12px; position: sticky; top: 0; z-index: 5;
-  }
-  #search {
-    flex: 1; min-width: 180px; padding: 8px 12px; font-size: 1rem;
-    background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
-  }
-  #search:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-  .filter-chip { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); user-select: none; cursor: pointer; }
-  .filter-chip input { accent-color: var(--accent); }
-  .stats { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
-  .notice {
-    background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn);
-    padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px;
-  }
-  table { width: 100%; border-collapse: collapse; background: var(--bg); }
-  thead th {
-    position: sticky; top: 62px; background: var(--bg); z-index: 4;
-    text-align: left; font-weight: 600; padding: 10px 12px; border-bottom: 2px solid var(--line);
-    cursor: pointer; user-select: none; white-space: nowrap;
-  }
-  thead th:hover { background: var(--accent-bg); color: var(--accent); }
-  thead th[data-sort="asc"]::after  { content: " ▲"; color: var(--accent); }
-  thead th[data-sort="desc"]::after { content: " ▼"; color: var(--accent); }
-  tbody td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
-  tbody tr:hover { background: var(--row-hover); }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SF Mono", Consolas, monospace; }
-  td.code { font-family: "SF Mono", Consolas, monospace; color: var(--muted); }
-  tr.fixed td.name::after {
-    content: " 🛠"; color: var(--warn); font-size: 0.8em; cursor: help;
-  }
-  tr.fixed { background: var(--warn-bg); }
-  .empty { text-align: center; padding: 40px; color: var(--muted); }
-  .loading { text-align: center; padding: 60px; color: var(--muted); }
-  footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; }
-  footer a { color: var(--accent); text-decoration: none; }
-  @media (max-width: 600px) {
-    body { padding: 10px; }
-    h1 { font-size: 1.15rem; }
-    thead th, tbody td { padding: 6px 8px; }
-    thead th { top: 58px; }
-    .controls { padding: 8px; }
+  a { color: var(--amber); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 24px 60px; }
+
+  /* ─── header ───────────────────────────────── */
+  header { border-bottom: 1px solid var(--line);
+           background: linear-gradient(180deg, rgba(245,183,51,.03), transparent); }
+  .hdr { max-width: var(--wrap); margin: 0 auto; padding: 22px 24px 16px;
+         display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  h1 { font-size: 26px; font-weight: 900; letter-spacing: -.02em; line-height: 1.1; }
+  h1 .hi { color: var(--amber); }
+  .sub { margin-top: 7px; font-family: var(--mono); font-size: 11px;
+         letter-spacing: .16em; text-transform: uppercase; color: var(--txt-dim); }
+
+  .kpis { display: flex; gap: 10px; flex-wrap: wrap; }
+  .kpi { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--r);
+         padding: 8px 13px; min-width: 92px; }
+  .kpi .l { font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+            text-transform: uppercase; color: var(--txt-dim); }
+  .kpi .v { font-family: var(--mono); font-weight: 700; font-size: 19px; margin-top: 2px; }
+  .kpi .v small { font-size: 11px; color: var(--txt-dim); font-weight: 400; margin-left: 3px; }
+  .kpi.hl { border-top: 2px solid var(--amber); }
+  .kpi.hl .v { color: var(--amber); }
+
+  /* ─── 來源 / 新鮮度 ─────────────────────────── */
+  .srcbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+            padding: 12px 0 0; font-family: var(--mono); font-size: 11px;
+            color: var(--txt-dim); letter-spacing: .03em; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+          border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--bg-elev); }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+  .pill.stale { border-color: var(--amber-dim); color: var(--amber); }
+  .pill.stale .dot { background: var(--amber); }
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px;
+         border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elev);
+         color: var(--txt-soft); font-family: var(--mono); font-size: 11px; cursor: pointer; }
+  .btn:hover { border-color: var(--amber-dim); color: var(--amber); text-decoration: none; }
+
+  .notice { margin: 12px 0 0; padding: 8px 12px; border-radius: var(--r);
+            background: rgba(245,183,51,.07); border: 1px solid var(--amber-dim);
+            color: var(--amber); font-size: 12px; }
+
+  /* ─── 工具列 (sticky) ───────────────────────── */
+  /* ⚠️ 這裡刻意不把表格包進任何 overflow 容器 ——
+     sticky 是相對「最近的捲動祖先」定位,一旦有 overflow:auto/hidden 的祖先,
+     thead 就只會黏在那個容器內、頁面往下捲時表頭會消失。
+     2,300 筆的表格沒有表頭幾乎沒法用,所以維持「祖先只有 body」的結構。 */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+              padding: 10px; margin: 14px 0 0;
+              background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--r);
+              position: sticky; top: 0; z-index: 5; box-shadow: var(--shadow); }
+  #search { flex: 1; min-width: 190px; padding: 7px 11px; font-size: 13px;
+            background: var(--bg); color: var(--txt);
+            border: 1px solid var(--line); border-radius: var(--r-sm); font-family: var(--sans); }
+  #search::placeholder { color: var(--txt-dim); }
+  #search:focus { outline: none; border-color: var(--amber-dim); }
+  .chip { display: flex; align-items: center; gap: 6px; font-size: 12px;
+          color: var(--txt-soft); user-select: none; cursor: pointer; white-space: nowrap; }
+  .chip input { accent-color: var(--amber); }
+  .stats { color: var(--txt-dim); font-family: var(--mono); font-size: 11px; white-space: nowrap; margin-left: auto; }
+
+  /* ─── 表格 ─────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  thead th { position: sticky; top: 56px; z-index: 4;
+             background: var(--bg-elev2); color: var(--txt-dim);
+             font-family: var(--mono); font-size: 10px; font-weight: 500;
+             letter-spacing: .14em; text-transform: uppercase; text-align: left;
+             padding: 9px 12px; border-bottom: 1px solid var(--line);
+             cursor: pointer; user-select: none; white-space: nowrap; }
+  thead th:hover { color: var(--amber); }
+  thead th.r { text-align: right; }
+  thead th[data-sort="asc"]::after  { content: " ▲"; color: var(--amber); }
+  thead th[data-sort="desc"]::after { content: " ▼"; color: var(--amber); }
+  tbody tr { background: var(--bg-row); }
+  tbody tr:nth-child(even) { background: var(--bg); }
+  tbody tr:hover { background: var(--bg-row-hi); }
+  tbody td { padding: 7px 12px; border-bottom: 1px solid var(--line-soft); }
+  td.code, td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.code { color: var(--txt-dim); }
+  td.num  { text-align: right; color: var(--txt-num); }
+  td.num.dim { color: var(--txt-dim); }
+  tr.fixed td.name::after { content: " 🛠"; color: var(--amber); font-size: .82em; }
+
+  /* 區間條:低—高 落在對數刻度上的位置,並標出面額 100 */
+  td.range { width: 190px; padding-right: 18px; }
+  .rb { position: relative; height: 16px; }
+  .rb .track { position: absolute; inset: 6px 0 auto; height: 4px;
+               background: var(--line-soft); border-radius: var(--r-pill); }
+  .rb .fill  { position: absolute; top: 6px; height: 4px; border-radius: var(--r-pill);
+               background: var(--amber); }
+  .rb .fill.above { background: var(--teal); }
+  .rb .fill.below { background: var(--rose); }
+  .rb .par { position: absolute; top: 1px; width: 1px; height: 14px;
+             background: var(--txt-dim); }
+  .rb .par::after { content: "100"; position: absolute; top: -1px; left: 3px;
+                    font-family: var(--mono); font-size: 8px; color: var(--txt-dim); }
+
+  .empty, .loading { text-align: center; padding: 48px; color: var(--txt-dim);
+                     font-family: var(--mono); font-size: 12px; }
+  footer { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line);
+           color: var(--txt-dim); font-size: 11.5px; }
+
+  @media (max-width: 720px) {
+    .hdr { padding: 16px 16px 12px; }
+    .wrap { padding: 0 16px 40px; }
+    h1 { font-size: 20px; }
+    td.range, th.range { display: none; }
+    thead th { top: 52px; }
   }
 </style>
 </head>
 <body>
 
-<h1>CB 掛牌歷史最高/最低價</h1>
-<div class="meta">
-  資料來源:<a href="https://cb168.netlify.app/" target="_blank" rel="noopener">cb168.netlify.app</a>
-  · <span id="updated_at">載入中…</span>
-  · <span id="count">—</span>
-  · <a href="data/cb_data.csv" download>下載 CSV</a>
-  · <a href="data/output.xlsx" download>原始 xlsx</a>
+<header>
+  <div class="hdr">
+    <div>
+      <h1>CB 掛牌 <span class="hi">歷史高低</span></h1>
+      <div class="sub">Listed high / low mirror · cb168</div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">收錄</div><div class="v" id="k_total">—<small>檔</small></div></div>
+      <div class="kpi"><div class="l">有報價</div><div class="v" id="k_quoted">—<small>檔</small></div></div>
+      <div class="kpi hl"><div class="l">最低 ≥ 100</div><div class="v" id="k_above">—<small>檔</small></div></div>
+      <div class="kpi"><div class="l">振幅中位</div><div class="v" id="k_amp">—<small>%</small></div></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="srcbar">
+    <span class="pill" id="fresh"><span class="dot"></span><span id="updated_at">載入中…</span></span>
+    <span>來源 <a href="https://cb168.netlify.app/" target="_blank" rel="noopener">cb168.netlify.app</a></span>
+    <a class="btn" href="data/cb_data.csv" download>⬇ CSV</a>
+    <a class="btn" href="data/output.xlsx" download>⬇ 原始 xlsx</a>
+    <a class="btn" href="https://github.com/ianlife4/cb-history" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <div id="notice" class="notice" style="display:none"></div>
+
+  <div class="controls">
+    <input id="search" type="search" placeholder="搜尋代號或名稱(例如 11011、台泥、立碁)" autocomplete="off" />
+    <label class="chip"><input type="checkbox" id="hide_zero" checked /> 隱藏無報價</label>
+    <label class="chip"><input type="checkbox" id="only_above" /> 只看最低 ≥ 100</label>
+    <span class="stats" id="stats"></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th data-key="代號" data-sort="asc">代號</th>
+        <th data-key="名稱">名稱</th>
+        <th data-key="_range" class="range">區間 (對數刻度 · 面額 100)</th>
+        <th data-key="掛牌最低" class="r">掛牌最低</th>
+        <th data-key="掛牌最高" class="r">掛牌最高</th>
+        <th data-key="_amp" class="r">振幅</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="6" class="loading">載入資料中…</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    每天自動從 cb168 鏡像備份一次(資料沒變動就不會產生新的 commit,所以「資料更新」時間可能停在上次真正變動那天)。
+    原始檔與清洗後的 JSON / CSV 都公開在 <a href="https://github.com/ianlife4/cb-history" target="_blank" rel="noopener">GitHub repo</a>。
+  </footer>
 </div>
-
-<div id="notice" class="notice" style="display:none"></div>
-
-<div class="controls">
-  <input id="search" type="search" placeholder="搜尋代號或名稱(例如 1101、台泥、立碁)" autocomplete="off" />
-  <label class="filter-chip">
-    <input type="checkbox" id="hide_zero" checked />
-    隱藏 0 價格
-  </label>
-  <span class="stats" id="stats"></span>
-</div>
-
-<table>
-  <thead>
-    <tr>
-      <th data-key="代號" data-sort="asc">代號</th>
-      <th data-key="名稱">名稱</th>
-      <th data-key="掛牌最高" class="num-h">掛牌最高</th>
-      <th data-key="掛牌最低" class="num-h">掛牌最低</th>
-    </tr>
-  </thead>
-  <tbody id="tbody">
-    <tr><td colspan="4" class="loading">載入資料中…</td></tr>
-  </tbody>
-</table>
-
-<footer>
-  本站每天自動從 cb168 鏡像備份一次,並修補原檔已知亂碼。
-  原始檔、清洗後 JSON / CSV 都公開在 <a href="https://github.com/ianlife4/cb-history" target="_blank" rel="noopener">GitHub repo</a>。
-</footer>
 
 <script>
 (() => {
-  const $ = (sel) => document.querySelector(sel);
-  const tbody = $('#tbody');
-  const search = $('#search');
-  const hideZero = $('#hide_zero');
-  const stats = $('#stats');
-  const noticeEl = $('#notice');
+  const $ = (s) => document.querySelector(s);
+  const tbody = $('#tbody'), search = $('#search'),
+        hideZero = $('#hide_zero'), onlyAbove = $('#only_above'),
+        stats = $('#stats'), noticeEl = $('#notice');
 
-  let allItems = [];
-  let fixedCodes = new Set();
-  let sortKey = '代號';
-  let sortDir = 'asc';
+  let allItems = [], fixedCodes = new Set(), sortKey = '代號', sortDir = 'asc';
 
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const fmt = (v) => {
     if (v === null || v === undefined || v === '') return '';
-    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '');
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(+v.toFixed(2));
     return String(v);
   };
 
+  // 對數刻度:域固定 10–3000 (實測資料 max 2750、最低非零 8.05)
+  const LO = Math.log10(10), HI = Math.log10(3000);
+  const pos = (v) => Math.min(100, Math.max(0, (Math.log10(Math.max(v, 10)) - LO) / (HI - LO) * 100));
+  const PAR = pos(100);
+
+  function rangeBar(lo, hi) {
+    if (!(lo > 0) || !(hi > 0)) return '<div class="rb"><div class="track"></div></div>';
+    const a = pos(lo), b = pos(hi);
+    const cls = lo >= 100 ? 'above' : (hi <= 100 ? 'below' : '');
+    return '<div class="rb">' +
+      '<div class="track"></div>' +
+      `<div class="fill ${cls}" style="left:${a.toFixed(2)}%;width:${Math.max(b - a, 0.6).toFixed(2)}%"></div>` +
+      `<div class="par" style="left:${PAR.toFixed(2)}%"></div>` +
+      '</div>';
+  }
+
   function render() {
     const q = search.value.trim().toLowerCase();
-    const filterZero = hideZero.checked;
     let rows = allItems;
-    if (q) {
-      rows = rows.filter(r =>
-        String(r['代號']).includes(q) ||
-        String(r['名稱'] || '').toLowerCase().includes(q)
-      );
-    }
-    if (filterZero) {
-      rows = rows.filter(r => (r['掛牌最高'] || 0) > 0 || (r['掛牌最低'] || 0) > 0);
-    }
-    // sort
+    if (q) rows = rows.filter(r =>
+      String(r['代號']).includes(q) || String(r['名稱'] || '').toLowerCase().includes(q));
+    if (hideZero.checked) rows = rows.filter(r => r._quoted);
+    if (onlyAbove.checked) rows = rows.filter(r => r._quoted && r['掛牌最低'] >= 100);
+
     rows = rows.slice().sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
+      // 空值永遠沉底,不管升冪降冪 —— 否則 null/NaN 會混進中間讓排序看起來壞掉
+      const an = (av === null || av === undefined || av === ''), bn = (bv === null || bv === undefined || bv === '');
+      if (an && bn) return 0;
+      if (an) return 1;
+      if (bn) return -1;
       if (typeof av === 'string' || typeof bv === 'string') {
-        av = String(av || ''); bv = String(bv || '');
+        av = String(av); bv = String(bv);
         return sortDir === 'asc' ? av.localeCompare(bv, 'zh-Hant') : bv.localeCompare(av, 'zh-Hant');
       }
-      av = av || 0; bv = bv || 0;
       return sortDir === 'asc' ? av - bv : bv - av;
     });
 
-    stats.textContent = `${rows.length} / ${allItems.length} 筆`;
-
+    stats.textContent = rows.length + ' / ' + allItems.length + ' 筆';
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty">沒有符合條件的資料</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">沒有符合條件的資料</td></tr>';
       return;
     }
     const frag = document.createDocumentFragment();
     for (const r of rows) {
       const tr = document.createElement('tr');
       if (fixedCodes.has(r['代號'])) tr.classList.add('fixed');
+      const lo = r['掛牌最低'], hi = r['掛牌最高'];
       tr.innerHTML =
-        `<td class="code">${fmt(r['代號'])}</td>` +
-        `<td class="name">${fmt(r['名稱'])}</td>` +
-        `<td class="num">${fmt(r['掛牌最高'])}</td>` +
-        `<td class="num">${fmt(r['掛牌最低'])}</td>`;
+        `<td class="code">${esc(fmt(r['代號']))}</td>` +
+        `<td class="name">${esc(fmt(r['名稱']))}</td>` +
+        `<td class="range">${rangeBar(lo, hi)}</td>` +
+        `<td class="num${r._quoted ? '' : ' dim'}">${esc(fmt(lo))}</td>` +
+        `<td class="num${r._quoted ? '' : ' dim'}">${esc(fmt(hi))}</td>` +
+        `<td class="num${r._amp == null ? ' dim' : ''}">${r._amp == null ? '—' : r._amp.toFixed(1) + '%'}</td>`;
       frag.appendChild(tr);
     }
     tbody.replaceChildren(frag);
   }
 
-  // sort handlers
   document.querySelectorAll('thead th').forEach(th => {
     th.addEventListener('click', () => {
       const key = th.dataset.key;
-      if (sortKey === key) {
-        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-      } else {
-        sortKey = key;
-        sortDir = 'asc';
-      }
+      // 區間欄按「掛牌最低」排(它本身沒有可比的純量)
+      const realKey = key === '_range' ? '掛牌最低' : key;
+      if (sortKey === realKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortKey = realKey; sortDir = 'asc'; }
       document.querySelectorAll('thead th').forEach(x => x.removeAttribute('data-sort'));
       th.setAttribute('data-sort', sortDir);
       render();
     });
   });
-
   search.addEventListener('input', render);
   hideZero.addEventListener('change', render);
+  onlyAbove.addEventListener('change', render);
 
-  // load data
-  const cacheBust = '?t=' + Date.now();
-  fetch('data/cb_data.json' + cacheBust)
-    .then(async r => {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      // 取 HTTP Last-Modified header 當資料更新時間(JSON 不含 timestamp,真正 idempotent)
-      const lm = r.headers.get('last-modified');
-      const data = await r.json();
-      return { data, lastModified: lm };
-    })
-    .then(({ data: d, lastModified }) => {
+  const median = (arr) => {
+    if (!arr.length) return null;
+    const s = arr.slice().sort((a, b) => a - b), m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+
+  const bust = '?t=' + Date.now();
+
+  // 資料新鮮度改讀 data/last_change.json 的 changed_at ——
+  // 不能用 HTTP Last-Modified:實測 GitHub Pages 對 index.html 與 cb_data.json 回的
+  // Last-Modified 完全相同(是站台部署時間),只要改個版面 push 一次就會謊報「資料是今天的」。
+  const freshness = fetch('data/last_change.json' + bust)
+    .then(r => r.ok ? r.json() : null).catch(() => null);
+
+  fetch('data/cb_data.json' + bust)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(async (d) => {
       allItems = d.items || [];
       fixedCodes = new Set((d.fixes_applied || []).map(f => f.code));
-      const updatedText = lastModified
-        ? new Date(lastModified).toLocaleString('zh-Hant', { hour12: false })
-        : '?';
-      $('#updated_at').textContent = '更新於 ' + updatedText;
-      $('#count').textContent = '共 ' + (d.count || allItems.length) + ' 檔';
+
+      for (const r of allItems) {
+        const lo = r['掛牌最低'], hi = r['掛牌最高'];
+        r._quoted = (lo > 0) && (hi > 0);
+        // 高/低 皆為 0 的 5 筆若直接相除會得到 NaN,再流進排序與中位數就會壞掉
+        r._amp = r._quoted ? (hi / lo - 1) * 100 : null;
+      }
+
+      const quoted = allItems.filter(r => r._quoted);
+      $('#k_total').innerHTML = allItems.length + '<small>檔</small>';
+      $('#k_quoted').innerHTML = quoted.length + '<small>檔</small>';
+      $('#k_above').innerHTML = quoted.filter(r => r['掛牌最低'] >= 100).length + '<small>檔</small>';
+      const mAmp = median(quoted.map(r => r._amp));
+      $('#k_amp').innerHTML = (mAmp == null ? '—' : mAmp.toFixed(1)) + '<small>%</small>';
+
+      const meta = await freshness;
+      const el = $('#updated_at'), pill = $('#fresh');
+      if (meta && meta.changed_at) {
+        const dt = new Date(meta.changed_at);
+        const days = (Date.now() - dt.getTime()) / 86400000;
+        el.textContent = '資料更新 ' + dt.toLocaleDateString('zh-Hant');
+        if (days > 3) {
+          pill.classList.add('stale');
+          pill.title = '距今 ' + Math.floor(days) + ' 天。cb168 沒有新資料時本來就不會更新,不一定是故障。';
+          el.textContent += '(' + Math.floor(days) + ' 天前)';
+        }
+      } else {
+        el.textContent = '資料更新時間不詳';
+        pill.classList.add('stale');
+      }
+
       if (fixedCodes.size > 0) {
         const list = (d.fixes_applied || []).map(f => `${f.code}「${f.fixed}」`).join('、');
         noticeEl.style.display = 'block';
-        noticeEl.textContent = `🛠 已修補原檔亂碼:${list}(原檔含 U+FFFD 替代字元,經查證後手動修正)`;
+        noticeEl.innerHTML = '🛠 <b>部分公司名稱經人工校正</b>:' + esc(list) +
+          '。原始檔這幾筆的中文名有編碼損毀,已比對公開資訊後修正,表格中以 🛠 標記。';
       }
       render();
     })
     .catch(e => {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty">載入失敗:${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">載入失敗:${esc(e.message)}</td></tr>`;
       console.error(e);
     });
 })();

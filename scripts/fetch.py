@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import sys
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import openpyxl
@@ -70,7 +72,9 @@ def write_outputs(header: list[str], items: list[dict], fixes_applied: list[dict
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # JSON — NO timestamp inside; idempotent: same data → same bytes.
-    # Frontend reads HTTP `Last-Modified` header for freshness.
+    # newline="\n" 是必要的:沒有它,在 Windows 上跑會寫出 CRLF,而 repo 存的是 LF
+    # → git 會把整個 2,300 行的檔案報成「已修改」,製造一個純換行的假 diff,
+    #   真正的資料變動會被埋在裡面看不出來。
     json_path = DATA_DIR / "cb_data.json"
     payload = {
         "source": URL,
@@ -78,9 +82,40 @@ def write_outputs(header: list[str], items: list[dict], fixes_applied: list[dict
         "fixes_applied": fixes_applied,
         "items": items,
     }
-    with open(json_path, "w", encoding="utf-8") as f:
+    with open(json_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(payload, f, ensure_ascii=False, indent=1)
     print(f"[write] {json_path}")
+
+    # 資料指紋 + 真正的變動時間 —— 前端拿這個當「資料新鮮度」,不要再用 HTTP Last-Modified。
+    #
+    # 為什麼不能用 Last-Modified:實測 GitHub Pages 對 index.html 與 data/cb_data.json
+    # 回的 Last-Modified **完全相同**(都是站台部署時間,不是檔案修改時間)。
+    # 所以只要改個版面 push 一次,頁面就會宣稱「資料更新於今天」,但 items 其實是舊的
+    # —— 一個會說謊的權威訊號,比沒有還糟。
+    #
+    # 這個檔只有在 items 的指紋真的變了才會被重寫,所以完全保留原本
+    # 「資料沒變 → 同樣的 bytes → 沒有 commit」的 idempotent 設計。
+    fingerprint = hashlib.sha256(
+        json.dumps(items, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    meta_path = DATA_DIR / "last_change.json"
+    prev_fp = None
+    if meta_path.exists():
+        try:
+            prev_fp = json.loads(meta_path.read_text(encoding="utf-8")).get("fingerprint")
+        except Exception:
+            prev_fp = None
+    if prev_fp != fingerprint:
+        meta = {
+            "fingerprint": fingerprint,
+            "changed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "count": len(items),
+        }
+        with open(meta_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=1)
+        print(f"[write] {meta_path} (資料有變動)")
+    else:
+        print(f"[skip]  {meta_path} (資料未變動,維持原時間)")
 
     # CSV (UTF-8 BOM, Excel-friendly)
     csv_path = DATA_DIR / "cb_data.csv"
