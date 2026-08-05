@@ -146,6 +146,12 @@
   .rb .par::after { content: "100"; position: absolute; top: -1px; left: 3px;
                     font-family: var(--mono); font-size: 8px; color: var(--txt-dim); }
 
+  /* 分頁控制:只有手機會出現(桌機一次全渲染,見 render() 註解) */
+  #pager { display: none; align-items: center; justify-content: center; gap: 14px;
+           padding: 16px 0 4px; font-family: var(--mono); font-size: 12px; color: var(--txt-soft); }
+  #pager .btn { padding: 8px 16px; }
+  #pager .btn:disabled { opacity: .35; cursor: default; border-color: var(--line); color: var(--txt-dim); }
+
   .empty, .loading { text-align: center; padding: 48px; color: var(--txt-dim);
                      font-family: var(--mono); font-size: 12px; }
   footer { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line);
@@ -212,6 +218,12 @@
     </tbody>
   </table>
 
+  <div id="pager" style="display:none">
+    <button id="pgPrev" class="btn">‹ 上一頁</button>
+    <span id="pgInfo"></span>
+    <button id="pgNext" class="btn">下一頁 ›</button>
+  </div>
+
   <footer>
     每天自動從 cb168 鏡像備份一次(資料沒變動就不會產生新的 commit,所以「資料更新」時間可能停在上次真正變動那天)。
     原始檔與清洗後的 JSON / CSV 都公開在 <a href="https://github.com/ianlife4/cb-history" target="_blank" rel="noopener">GitHub repo</a>。
@@ -223,9 +235,26 @@
   const $ = (s) => document.querySelector(s);
   const tbody = $('#tbody'), search = $('#search'),
         hideZero = $('#hide_zero'), onlyAbove = $('#only_above'),
-        stats = $('#stats'), noticeEl = $('#notice');
+        stats = $('#stats'), noticeEl = $('#notice'),
+        pager = $('#pager'), pgPrev = $('#pgPrev'), pgNext = $('#pgNext'), pgInfo = $('#pgInfo');
 
   let allItems = [], fixedCodes = new Set(), sortKey = '代號', sortDir = 'asc';
+
+  // ── 手機:分頁 + 不建區間條 ────────────────────────────────
+  // 實測(2026-08-05):全表 2,317 列在 375px 寬重繪一次要 **79,821 ms**,
+  // 同一件事在 1280px 只要 402 ms —— 差 200 倍。窄視窗下 table layout 的成本是超線性的,
+  // 而開頁的第一次渲染就會走這條路,等於手機上這頁不能用。
+  //
+  // 兩個對策:
+  //   1) 手機不建區間條的 markup。原本只用 CSS @media 把該欄 display:none,
+  //      元素還是照建 —— 每列多 4 個 div,DOM 從約 1.2 萬變 2.5 萬,
+  //      手機付了全部成本卻看不到任何東西。
+  //   2) 手機分頁(每頁 120 列)。桌機維持一次全渲染,因為那是瀏覽器 Ctrl+F
+  //      能搜到整張表的前提;手機沒有 Ctrl+F,分頁純賺。
+  const MQ_MOBILE = window.matchMedia('(max-width: 720px)');
+  let isMobile = MQ_MOBILE.matches;
+  const PAGE_SIZE = 120;
+  let page = 0;
 
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -273,26 +302,52 @@
       return sortDir === 'asc' ? av - bv : bv - av;
     });
 
-    stats.textContent = rows.length + ' / ' + allItems.length + ' 筆';
+    // 每次 render 都重新判斷寬度 —— 不能只靠 matchMedia 的 change 事件,
+    // 實測用開發工具改視窗尺寸時它不一定會觸發,結果桌機still停在手機的分頁模式。
+    isMobile = MQ_MOBILE.matches;
+
     if (rows.length === 0) {
+      stats.textContent = '0 / ' + allItems.length + ' 筆';
       tbody.innerHTML = '<tr><td colspan="6" class="empty">沒有符合條件的資料</td></tr>';
+      pager.style.display = 'none';
       return;
     }
+
+    // 手機才分頁;桌機一次全出,保住瀏覽器 Ctrl+F 搜整張表的能力
+    const total = rows.length;
+    const pages = isMobile ? Math.ceil(total / PAGE_SIZE) : 1;
+    if (page >= pages) page = 0;
+    const view = isMobile ? rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) : rows;
+
+    stats.textContent = isMobile
+      ? (page * PAGE_SIZE + 1) + '–' + (page * PAGE_SIZE + view.length) + ' / ' + total + ' 筆'
+      : total + ' / ' + allItems.length + ' 筆';
+
     const frag = document.createDocumentFragment();
-    for (const r of rows) {
+    for (const r of view) {
       const tr = document.createElement('tr');
       if (fixedCodes.has(r['代號'])) tr.classList.add('fixed');
       const lo = r['掛牌最低'], hi = r['掛牌最高'];
       tr.innerHTML =
         `<td class="code">${esc(fmt(r['代號']))}</td>` +
         `<td class="name">${esc(fmt(r['名稱']))}</td>` +
-        `<td class="range">${rangeBar(lo, hi)}</td>` +
+        // 手機:整格留空,不建區間條的 4 個 div(該欄本來就被 CSS 隱藏)
+        `<td class="range">${isMobile ? '' : rangeBar(lo, hi)}</td>` +
         `<td class="num${r._quoted ? '' : ' dim'}">${esc(fmt(lo))}</td>` +
         `<td class="num${r._quoted ? '' : ' dim'}">${esc(fmt(hi))}</td>` +
         `<td class="num${r._amp == null ? ' dim' : ''}">${r._amp == null ? '—' : r._amp.toFixed(1) + '%'}</td>`;
       frag.appendChild(tr);
     }
     tbody.replaceChildren(frag);
+
+    if (pages > 1) {
+      pager.style.display = 'flex';
+      pgInfo.textContent = (page + 1) + ' / ' + pages;
+      pgPrev.disabled = page === 0;
+      pgNext.disabled = page >= pages - 1;
+    } else {
+      pager.style.display = 'none';
+    }
   }
 
   document.querySelectorAll('thead th').forEach(th => {
@@ -307,9 +362,18 @@
       render();
     });
   });
-  search.addEventListener('input', render);
-  hideZero.addEventListener('change', render);
-  onlyAbove.addEventListener('change', render);
+  // 搜尋要 debounce —— 每敲一個字就重繪全表,在手機上是 80 秒級的成本
+  let sTimer = null;
+  search.addEventListener('input', function(){
+    clearTimeout(sTimer);
+    sTimer = setTimeout(function(){ page = 0; render(); }, 180);
+  });
+  hideZero.addEventListener('change', function(){ page = 0; render(); });
+  onlyAbove.addEventListener('change', function(){ page = 0; render(); });
+  pgPrev.addEventListener('click', function(){ if (page > 0) { page--; render(); window.scrollTo(0,0); } });
+  pgNext.addEventListener('click', function(){ page++; render(); window.scrollTo(0,0); });
+  // 轉螢幕方向 / 改視窗寬度時,分頁與區間條的策略要跟著換
+  MQ_MOBILE.addEventListener('change', function(e){ isMobile = e.matches; page = 0; render(); });
 
   const median = (arr) => {
     if (!arr.length) return null;
